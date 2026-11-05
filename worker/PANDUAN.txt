@@ -1,0 +1,17 @@
+EIS Worker untuk Windows
+
+1. Ekstrak seluruh isi ZIP ke folder tetap, misalnya D:\EIS-Worker. Jangan menjalankan dari dalam ZIP.
+2. Pastikan Python 3.12 dengan Tcl/Tk terpasang dari python.org. Jalankan INSTALL.cmd sekali.
+3. Pada launcher, klik Siapkan dependensi. Tunggu selesai; unduhan pertama dapat beberapa GB.
+4. Pada website, daftarkan perangkat atau buat koneksi baru, lalu unduh file koneksi JSON.
+5. Pada launcher, klik Impor koneksi dan pilih JSON tersebut. Periksa alamat API sebelum menyetujui.
+6. Klik Jalankan worker pada website atau pada launcher. Biarkan jendela launcher terbuka.
+7. Status Online di website menandakan worker sudah terhubung. Training dimulai dari halaman Eksperimen.
+
+Saat sudah terpasang, website dapat membuka launcher melalui eisworker://. Browser mungkin meminta izin membuka aplikasi. Browser tidak dapat memasang/menyalakan program diam-diam.
+
+Jika tombol website tidak membuka apa pun (misalnya browser tertanam tidak mendukung protokol), jalankan BUKA-LAUNCHER.cmd atau INSTALL.cmd dari folder ini.
+
+INSTALL mendaftarkan penghubung hanya pada akun Windows saat ini, tanpa admin. Folder tidak boleh dipindah setelah pemasangan. Untuk melepas penghubung, buka UNINSTALL-LAUNCHER.py dengan Python; ini tidak menghapus data.
+
+Koneksi dan hasil tetap berada dalam folder worker ini. Jangan membagikan worker.json. Paket unduhan tidak menyertakan token, data training pengguna, atau lingkungan Python laptop pembuat.

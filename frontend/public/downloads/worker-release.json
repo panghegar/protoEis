@@ -1,0 +1,17 @@
+{
+  "file": "eis-worker-windows.zip",
+  "bytes": 15326,
+  "sha256": "6007b9ad2fb9adeacb35703d46c4002509d0af6fcc56d5e7cb2d0c1d7a31c0d6",
+  "files": [
+    "INSTALL.cmd",
+    "BUKA-LAUNCHER.cmd",
+    "UNINSTALL-LAUNCHER.py",
+    "install_launcher.py",
+    "launcher.py",
+    "launcher_core.py",
+    "worker.py",
+    "trainer.py",
+    "requirements.txt",
+    "PANDUAN.txt"
+  ]
+}

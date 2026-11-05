@@ -1,0 +1,4 @@
+{
+  "apiUrl": "https://YOUR-PROTOTYPE-API.vercel.app/api",
+  "token": "WORKER_ID.SECRET_FROM_DASHBOARD"
+}
