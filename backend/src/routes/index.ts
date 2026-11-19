@@ -9,8 +9,10 @@ import {requireUser,requireWorker,hash,secret,type AuthRequest} from '../middlew
 import {configSchema,progressSchema,heartbeatSchema} from '../validator/schemas.js';
 import {ApiError,claim,expireJobs,ownedLease,progress,publicJob} from '../services/jobs.js';
 import connectionRoutes from './connection.js';
+import birdRoutes from './bird.js';
 const router=Router();
 router.use(connectionRoutes);
+router.use(birdRoutes);
 const id=z.string().uuid();
 const lease=z.string().regex(/^[a-f0-9]{64}$/);
 router.get('/health',(_req,res)=>res.json({ok:true,service:'EIS training control API'}));
@@ -43,13 +45,13 @@ router.post('/workers/:id/revoke',requireUser,async(req:AuthRequest,res)=>{
   const workerId=id.parse(req.params.id);
   const updated=await prisma.worker.updateMany({where:{id:workerId,ownerId:req.userId},data:{disabled:true}});
   if(!updated.count) throw new ApiError(404,'Perangkat tidak ditemukan.');
-  await prisma.job.updateMany({where:{workerId,status:'queued'},data:{status:'cancelled',cancelRequested:true,finishedAt:new Date()}});
+  await prisma.job.updateMany({where:{workerId,status:{in:['queued','uploading']}},data:{status:'cancelled',cancelRequested:true,finishedAt:new Date()}});
   await prisma.job.updateMany({where:{workerId,status:'running'},data:{status:'interrupted',cancelRequested:true,finishedAt:new Date()}});
   res.json({ok:true});
 });
 router.get('/jobs',requireUser,async(req:AuthRequest,res)=>{
   await expireJobs();
-  res.json((await prisma.job.findMany({where:{ownerId:req.userId},orderBy:{createdAt:'desc'},take:100})).map(publicJob));
+  res.json((await prisma.job.findMany({where:{ownerId:req.userId,kind:'training'},orderBy:{createdAt:'desc'},take:100})).map(publicJob));
 });
 router.post('/jobs',requireUser,async(req:AuthRequest,res)=>{
   const body=z.object({workerId:id,config:configSchema}).strict().parse(req.body);
@@ -65,18 +67,18 @@ router.post('/jobs/:id/cancel',requireUser,async(req:AuthRequest,res)=>{
     const rows=await tx.$queryRaw<{id:string}[]>`SELECT id FROM "Job" WHERE id=${jobId} AND "ownerId"=${req.userId!} FOR UPDATE`;
     if(!rows.length) throw new ApiError(404,'Pekerjaan tidak ditemukan.');
     const job=await tx.job.findUniqueOrThrow({where:{id:jobId}});
-    if(job.status==='queued') await tx.job.update({where:{id:jobId},data:{status:'cancelled',cancelRequested:true,finishedAt:new Date()}});
+    if(['queued','uploading'].includes(job.status)) await tx.job.update({where:{id:jobId},data:{status:'cancelled',cancelRequested:true,finishedAt:new Date(),...(job.kind==='bird'?{audioExpiresAt:new Date(Date.now()+86400000)}:{})}});
     if(job.status==='running') await tx.job.update({where:{id:jobId},data:{cancelRequested:true}});
   });
   res.json({ok:true});
 });
 router.get('/jobs/:id/report',requireUser,async(req:AuthRequest,res)=>{
-  const job=await prisma.job.findFirst({where:{id:id.parse(req.params.id),ownerId:req.userId}});
+  const job=await prisma.job.findFirst({where:{id:id.parse(req.params.id),ownerId:req.userId,kind:'training'}});
   if(!job) throw new ApiError(404,'Pekerjaan tidak ditemukan.');
   res.json({...publicJob(job),dataset:'sklearn digits; demonstrasi, bukan model EIS'});
 });
 router.get('/jobs/:id/download',requireUser,async(req:AuthRequest,res)=>{
-  const job=await prisma.job.findFirst({where:{id:id.parse(req.params.id),ownerId:req.userId}});
+  const job=await prisma.job.findFirst({where:{id:id.parse(req.params.id),ownerId:req.userId,kind:'training'}});
   if(!job) throw new ApiError(404,'Pekerjaan tidak ditemukan.');
   if(!storage || !job.artifactPath) throw new ApiError(404,'Model tersimpan di folder worker/runs pada laptop. Unggahan cloud belum tersedia.');
   const {data,error}=await storage.createSignedUrl(job.artifactPath,60,{download:true});
@@ -95,12 +97,14 @@ router.post('/worker/claim',requireWorker,async(req:AuthRequest,res)=>{
 });
 router.post('/worker/jobs/:id/progress',requireWorker,async(req:AuthRequest,res)=>{
   const b=z.object({lease,sequence:z.number().int().positive(),progress:progressSchema}).strict().parse(req.body);
+  const job=await ownedLease(id.parse(req.params.id),req.workerId!,b.lease);
+  if(job.kind!=='training')throw new ApiError(409,'Gunakan endpoint identifikasi audio.');
   res.json(await progress(id.parse(req.params.id),req.workerId!,b.lease,b.sequence,b.progress));
 });
 router.post('/worker/jobs/:id/upload-ticket',requireWorker,async(req:AuthRequest,res)=>{
   const b=z.object({lease}).strict().parse(req.body);
   const job=await ownedLease(id.parse(req.params.id),req.workerId!,b.lease);
-  if(job.status!=='running') throw new ApiError(409,'Pekerjaan tidak aktif.');
+  if(job.kind!=='training'||job.status!=='running') throw new ApiError(409,'Pekerjaan training tidak aktif.');
   if(!storage){res.json({enabled:false});return;}
   const path=job.ownerId+'/'+job.id+'/hasil-training.zip';
   const {data,error}=await storage.createSignedUploadUrl(path,{upsert:true});
@@ -111,8 +115,9 @@ router.post('/worker/jobs/:id/complete',requireWorker,async(req:AuthRequest,res)
   const b=z.object({lease,status:z.enum(['completed','cancelled','failed']),progress:progressSchema,artifactUploaded:z.boolean().default(false)}).strict().parse(req.body);
   const jobId=id.parse(req.params.id);
   const job=await ownedLease(jobId,req.workerId!,b.lease);
+  if(job.kind!=='training')throw new ApiError(409,'Gunakan endpoint identifikasi audio.');
   if(['completed','cancelled','failed'].includes(job.status)){res.json({ok:true,status:job.status});return;}
-  if(job.status!=='running') throw new ApiError(409,'Pekerjaan tidak aktif.');
+  if(job.kind!=='training'||job.status!=='running') throw new ApiError(409,'Pekerjaan training tidak aktif.');
   let artifactPath:string|null=null;
   if(b.artifactUploaded){
     if(!storage) throw new ApiError(400,'Storage belum dikonfigurasi.');

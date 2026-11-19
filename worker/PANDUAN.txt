@@ -15,3 +15,6 @@ Jika tombol website tidak membuka apa pun (misalnya browser tertanam tidak mendu
 INSTALL mendaftarkan penghubung hanya pada akun Windows saat ini, tanpa admin. Folder tidak boleh dipindah setelah pemasangan. Untuk melepas penghubung, buka UNINSTALL-LAUNCHER.py dengan Python; ini tidak menghapus data.
 
 Koneksi dan hasil tetap berada dalam folder worker ini. Jangan membagikan worker.json. Paket unduhan tidak menyertakan token, data training pengguna, atau lingkungan Python laptop pembuat.
+
+IDENTIFIKASI WAV
+Paket ini mendukung mode simulasi identifikasi audio WAV melalui menu Identifikasi suara. Perbarui paket dari website untuk memakai fitur baru. Impor koneksi yang sudah dimiliki, lalu jalankan worker. Label/keyakinan simulasi bukan prediksi model.

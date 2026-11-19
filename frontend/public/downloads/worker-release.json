@@ -1,7 +1,7 @@
 {
   "file": "eis-worker-windows.zip",
-  "bytes": 15326,
-  "sha256": "6007b9ad2fb9adeacb35703d46c4002509d0af6fcc56d5e7cb2d0c1d7a31c0d6",
+  "bytes": 19095,
+  "sha256": "cbcf59c80717fa3786de7d675a1f26452cc800a4c32af56952d35fd2bbe3ce09",
   "files": [
     "INSTALL.cmd",
     "BUKA-LAUNCHER.cmd",
@@ -11,6 +11,7 @@
     "launcher_core.py",
     "worker.py",
     "trainer.py",
+    "bird_worker.py",
     "requirements.txt",
     "PANDUAN.txt"
   ]

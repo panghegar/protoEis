@@ -6,7 +6,9 @@ export const leaseMs=180000;
 export class ApiError extends Error {constructor(public code:number,message:string){super(message);}}
 export const publicJob=(job:Job)=>{const {leaseHash:_,...safe}=job;return safe;};
 export async function expireJobs(){
-  await prisma.job.updateMany({where:{status:'running',leaseExpiresAt:{lt:new Date()}},data:{status:'interrupted',finishedAt:new Date()}});
+  const now=new Date();
+  await prisma.job.updateMany({where:{kind:'training',status:'running',leaseExpiresAt:{lt:now}},data:{status:'interrupted',finishedAt:now}});
+  await prisma.job.updateMany({where:{kind:'bird',status:'running',leaseExpiresAt:{lt:now}},data:{status:'interrupted',finishedAt:now,audioExpiresAt:new Date(now.getTime()+86400000)}});
 }
 export async function claim(workerId:string){
   return prisma.$transaction(async tx=>{
@@ -14,7 +16,9 @@ export async function claim(workerId:string){
     await tx.$queryRaw`SELECT id FROM "Worker" WHERE id = ${workerId} FOR UPDATE`;
     const running=await tx.job.findFirst({where:{workerId,status:'running'}});
     if(running) return null;
-    const rows=await tx.$queryRaw<Job[]>`SELECT * FROM "Job" WHERE "workerId"=${workerId} AND status='queued' ORDER BY "createdAt" ASC LIMIT 1 FOR UPDATE SKIP LOCKED`;
+    const device=await tx.worker.findUniqueOrThrow({where:{id:workerId}});
+    const bird=(device.capabilities as {bird_audio_version?:number}).bird_audio_version===1;
+    const rows=await tx.$queryRaw<Job[]>`SELECT * FROM "Job" WHERE "workerId"=${workerId} AND status='queued' AND (kind='training' OR (${bird} AND kind='bird' AND "audioExpiresAt">NOW())) ORDER BY "createdAt" ASC LIMIT 1 FOR UPDATE SKIP LOCKED`;
     const queued=rows[0];
     if(!queued) return null;
     const lease=randomBytes(32).toString('hex');

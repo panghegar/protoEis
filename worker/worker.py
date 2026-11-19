@@ -11,6 +11,7 @@ import urllib.error
 from urllib.parse import urlparse
 import uuid
 from trainer import atomic_json
+from bird_worker import execute_bird,recover_bird
 
 ROOT = Path(__file__).resolve().parent
 STOP = ROOT / 'worker.stop'
@@ -44,7 +45,7 @@ class Client:
 def hardware():
     import torch
     available=torch.cuda.is_available()
-    return {'cuda':available,'gpu':torch.cuda.get_device_name(0) if available else None,
+    return {'bird_audio_version':1,'cuda':available,'gpu':torch.cuda.get_device_name(0) if available else None,
         'vram_gb':round(torch.cuda.get_device_properties(0).total_memory/1024**3,1) if available else None,
         'torch':str(torch.__version__),'python':sys.version.split()[0]}
 
@@ -198,12 +199,15 @@ def main():
         caps=hardware()
         print('Worker EIS | '+(caps['gpu'] or 'CPU')+' | '+client.base,flush=True)
         recover(client)
+        recover_bird(client,ROOT)
         while not STOP.exists():
             try:
                 client.post('/worker/heartbeat',caps)
                 if STOP.exists(): break
                 job=client.post('/worker/claim',{})['job']
-                if job: execute(client,job,caps)
+                if job:
+                    if job.get('kind')=='bird': execute_bird(client,job,caps,ROOT,STOP)
+                    else: execute(client,job,caps)
                 if args.once: return
                 time.sleep(5)
             except ApiFailure as exc:

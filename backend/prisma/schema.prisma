@@ -41,10 +41,28 @@ model Job {
   leaseHash String?
   leaseExpiresAt DateTime?
   cancelRequested Boolean @default(false)
+  kind String @default("training")
+  audio Json?
+  audioExpiresAt DateTime?
+  audioDeletedAt DateTime?
+  audioCleanupCheckedAt DateTime?
+  segments BirdSegment[]
   artifactPath String?
   createdAt DateTime @default(now())
   startedAt DateTime?
   finishedAt DateTime?
   @@index([workerId,status,createdAt])
   @@index([ownerId,createdAt])
+  @@index([kind,audioExpiresAt])
+}
+
+model BirdSegment {
+  jobId String
+  job Job @relation(fields:[jobId],references:[id],onDelete:Cascade)
+  ordinal Int
+  startSeconds Float
+  endSeconds Float
+  species String
+  confidence Float
+  @@id([jobId,ordinal])
 }

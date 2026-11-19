@@ -3,6 +3,8 @@ import {NavLink,Route,Routes} from 'react-router-dom';
 import {api,ApiError,API_BASE_URL,saveJson,type Config,type Job,type Worker} from './services/api';
 import LossChart from './components/LossChart';
 import Devices from './components/Devices';
+import BirdAudio from './components/BirdAudio';
+import './bird.css';
 const labels:Record<string,string>={queued:'Mengantre',running:'Berjalan',completed:'Selesai',cancelled:'Dihentikan',failed:'Gagal',interrupted:'Terputus'};
 const pct=(value?:number)=>value===undefined?'—':(value*100).toFixed(1)+'%';
 const errorText=(error:unknown)=>error instanceof Error?error.message:'Terjadi kesalahan.';
@@ -26,16 +28,16 @@ export default function App(){
    const poll=async()=>{try{await refresh();}catch(e){if(!cancelled){setConnected(false);setError(errorText(e));if(e instanceof ApiError&&e.status===401)logout();}}finally{if(!cancelled)timer=setTimeout(poll,2500);}};
    void poll();return()=>{cancelled=true;clearTimeout(timer);};
  },[token,refresh,logout]);
- const device=workers.find(w=>w.id===workerId&&!w.disabled)||workers.find(w=>!w.disabled);
+ const device=workers.find(w=>w.id===workerId&&!w.disabled)||workers.find(w=>!w.disabled&&w.online)||workers.find(w=>!w.disabled);
  const job=jobs.find(j=>j.id===selected)||jobs[0];
  const progress=job?.progress||{},history=progress.history||[];
  const runAction=async(action:()=>Promise<void>)=>{setBusy(true);setError('');try{await action();await refresh();}catch(e){setError(errorText(e));}finally{setBusy(false);}};
  const start=(e:FormEvent)=>{e.preventDefault();if(!device)return;void runAction(async()=>{const j=await api<Job>('/jobs',token,{workerId:device.id,config});setSelected(j.id);});};
  if(!token)return <Login onLogin={value=>{sessionStorage.setItem('eis-prototype-token',value);setToken(value);setError('');}}/>;
- return <div className="app-shell"><aside className="sidebar"><div className="brand"><img src="/eis-logo.png" alt="Endemic Indonesia"/><div>ENDEMIC INDONESIA<small>TRAINING STUDIO</small></div></div><span className="nav-label">RUANG KERJA</span><nav><NavLink to="/" end>◈ <span>Eksperimen</span></NavLink><NavLink to="/devices">▣ <span>Perangkat lokal</span><b>{workers.filter(w=>w.online).length}</b></NavLink></nav><div className="sidebar-note"><span className="live-dot"/> Training lokal<p>Website mengatur tugas. GPU laptop mengerjakan training.</p></div><button className="logout" onClick={logout}>Keluar dari studio ↗</button></aside>
+ return <div className="app-shell"><aside className="sidebar"><div className="brand"><img src="/eis-logo.png" alt="Endemic Indonesia"/><div>ENDEMIC INDONESIA<small>TRAINING STUDIO</small></div></div><span className="nav-label">RUANG KERJA</span><nav><NavLink to="/birds">♫ <span>Identifikasi suara</span></NavLink><NavLink to="/" end>◈ <span>Eksperimen</span></NavLink><NavLink to="/devices">▣ <span>Perangkat lokal</span><b>{workers.filter(w=>w.online).length}</b></NavLink></nav><div className="sidebar-note"><span className="live-dot"/> Training lokal<p>Website mengatur tugas. GPU laptop mengerjakan training.</p></div><button className="logout" onClick={logout}>Keluar dari studio ↗</button></aside>
  <main className="main"><header><span className="breadcrumb">EIS / Penelitian / Training Studio</span><span className={'connection '+(connected?'':'offline')}>● {connected?'API terhubung':'Menghubungkan API'}</span></header>
  {error&&<div className="alert" role="alert">{error}<button aria-label="Tutup pesan" onClick={()=>setError('')}>×</button></div>}
- <Routes><Route path="/devices" element={<Devices workers={workers} token={token} refresh={refresh} onError={setError}/>}/>
+ <Routes><Route path="/birds" element={<BirdAudio workers={workers} token={token}/>}/><Route path="/devices" element={<Devices workers={workers} token={token} refresh={refresh} onError={setError}/>}/>
  <Route path="*" element={<><section className="intro"><div><span className="eyebrow">EKSPERIMEN / GPU LOKAL</span><h1>Dari data ke model.</h1><p>Atur eksperimen, pantau pembelajaran, dan simpan hasilnya.<br/>Training berlangsung pada laptop yang Anda hubungkan.</p></div><div className="hardware"><span className="eyebrow">PERANGKAT TERPILIH</span><strong>{device?.name||'Belum ada perangkat'}</strong><p>{device?.capabilities.gpu||'Daftarkan dan jalankan worker lokal'}</p><small>{device?.online?'● Online · siap menerima tugas':'○ Offline · tugas akan menunggu'}{device?.capabilities.vram_gb?' · '+device.capabilities.vram_gb+' GB VRAM':''}</small></div></section>
  <div className="notice"><b>DATASET DEMO</b><span>1.797 gambar angka 0–9 · MLP 64–128–64–10. Untuk menguji alur website dan worker; belum model burung/capung EIS.</span></div>
  <div className="workspace"><div className="left-stack"><section className="card"><div className="section-heading"><span>01</span><h2>Atur eksperimen</h2></div><form onSubmit={start}>

@@ -12,7 +12,8 @@
     "postinstall": "prisma generate",
     "db:deploy": "prisma migrate deploy",
     "seed": "tsx scripts/seed.ts",
-    "test": "tsx --test tests/api.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "bird:storage": "tsx scripts/setup-bird-storage.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

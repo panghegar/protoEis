@@ -14,7 +14,11 @@ Proyek berada di `D:\COOLYEAH\TA\EIS\code\prototype`. Referensi implementasi ada
 
 Versi patch/minor beberapa paket diperbarui dari acuan untuk mengatasi advisori npm; bcrypt memakai versi 6 dengan API hashing yang sama. Versi tepat dikunci di masing-masing package-lock.json.
 
-**Model masih demonstrasi:** dataset digits berisi 1.797 gambar angka 8×8, MLP 64→128→64→10. Model burung/capung, preprocessing Excel, audio, raster, heatmap, dan rekomendasi EIS belum diimplementasikan. Ini validasi arsitektur training online dengan worker laptop. Semua eksperimen dimulai dari awal; resume checkpoint belum tersedia.
+**Model masih demonstrasi:** dataset digits berisi 1.797 gambar angka 8×8, MLP 64→128→64→10. Model burung/capung asli, preprocessing Excel umum, raster, heatmap, dan rekomendasi EIS belum diimplementasikan. Modul identifikasi audio WAV tersedia dalam mode simulasi yang ditandai jelas; label dan keyakinannya bukan prediksi model. Ini validasi arsitektur training online dengan worker laptop. Semua eksperimen dimulai dari awal; resume checkpoint belum tersedia.
+
+## Identifikasi suara burung (simulasi)
+
+Menu Identifikasi suara menyediakan alur unggah satu WAV, transfer multipart 20 MiB langsung ke Storage privat, antrean worker laptop, progres/pembatalan, hasil per segmen, dan XLSX. Audio kedaluwarsa 24 jam setelah tugas berakhir; hasil tetap disimpan di database. Penghapusan fisik saat tidak ada trafik memerlukan Supabase Cron. Panduan setup bucket, migrasi, worker baru, dan penjadwal ada di [docs/BIRD-AUDIO.md](docs/BIRD-AUDIO.md).
 
 ## Menjalankan worker tanpa terminal (Windows)
 

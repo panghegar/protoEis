@@ -27,7 +27,7 @@ class Launcher:
         frame=ttk.Frame(window,padding=24)
         frame.pack(fill='both',expand=True)
         ttk.Label(frame,text='EIS Worker',font=('Segoe UI',22,'bold')).pack(anchor='w')
-        ttk.Label(frame,text='Hubungkan laptop Anda. Training dijalankan oleh GPU atau CPU lokal.',wraplength=660).pack(anchor='w',pady=(5,16))
+        ttk.Label(frame,text='Hubungkan laptop Anda. Training dan identifikasi audio berjalan di laptop.',wraplength=660).pack(anchor='w',pady=(5,16))
         self.connection=tk.StringVar()
         self.state=tk.StringVar(value='Memeriksa perangkat…')
         ttk.Label(frame,textvariable=self.connection,wraplength=660).pack(anchor='w',pady=5)
