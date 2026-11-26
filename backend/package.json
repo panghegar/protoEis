@@ -13,7 +13,9 @@
     "db:deploy": "prisma migrate deploy",
     "seed": "tsx scripts/seed.ts",
     "test": "tsx --test tests/*.test.ts",
-    "bird:storage": "tsx scripts/setup-bird-storage.ts"
+    "bird:storage": "tsx scripts/setup-bird-storage.ts",
+    "bird:cleanup:preview": "tsx scripts/cleanup-audio.ts --dry-run",
+    "bird:cleanup": "tsx scripts/cleanup-audio.ts --apply"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

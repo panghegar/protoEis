@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {prisma} from '../config/prisma.js';
 import {audioStorage} from '../config/storage.js';
 import {ApiError} from './jobs.js';
-import type {Job} from '../generated/prisma/client.js';
+import type {Prisma,Job} from '../generated/prisma/client.js';
 
 export const CHUNK_BYTES=20*1024*1024;
 export const MAX_AUDIO_BYTES=700*1024*1024;
@@ -28,22 +28,65 @@ export function requireAudioStorage(){if(!audioStorage)throw new ApiError(503,'S
 export function requireLiveAudio(job:Job){if(job.audioDeletedAt||!job.audioExpiresAt||job.audioExpiresAt<=new Date())throw new ApiError(410,'Audio sudah kedaluwarsa; unggah rekaman lagi. Hasil lama tetap tersimpan.');}
 export function publicBird(job:Job){const {leaseHash:_,audio,...safe}=job;return {...safe,audio:audio?{...audioOf(job),hashes:undefined}:null,simulation:isSimulation(job)};}
 
-// Bounded and retryable. A scheduled caller is needed when there is no traffic.
-// Re-delete tombstones for 48 h: an already issued signed upload can arrive late.
+// Expired records are locked and made terminal before Storage I/O, preventing
+// cancellation/finalization from renewing retention between selection and deletion.
+function cleanupWhere(ownerId:string|undefined,now:Date,afterId='',auditDeleted=false):Prisma.JobWhereInput{
+ return {kind:'bird',...(ownerId?{ownerId}:{}),id:{gt:afterId},status:{not:'running'},audioExpiresAt:{lte:now},
+  OR:[{audioDeletedAt:null},{...(auditDeleted?{audioDeletedAt:{not:null}}:{audioDeletedAt:{gt:new Date(now.getTime()-48*3600000)}}),
+   OR:[{audioCleanupCheckedAt:null},{audioCleanupCheckedAt:{lte:new Date(now.getTime()-3600000)}}]}]};
+}
+type Batch={deleted:number;pending:number;scanned:number;estimatedBytesReleased:number;eligibleBytes:number;lastId:string};
+async function cleanupBatch(ownerId:string|undefined,limit:number,now:Date,afterId='',dryRun=false,auditDeleted=false):Promise<Batch>{
+ const empty={deleted:0,pending:0,scanned:0,estimatedBytesReleased:0,eligibleBytes:0,lastId:afterId};
+ if(!audioStorage)return empty;
+ const rows=dryRun?await prisma.job.findMany({where:cleanupWhere(ownerId,now,afterId,auditDeleted),orderBy:{id:'asc'},take:limit}):await prisma.$transaction(async tx=>{
+  const jobs=await tx.$queryRaw<Job[]>`SELECT * FROM "Job" WHERE kind='bird' AND status<>'running'
+   AND "audioExpiresAt"<=${now} AND id>${afterId}
+   AND (${ownerId??null}::text IS NULL OR "ownerId"=${ownerId??null})
+   AND ("audioDeletedAt" IS NULL OR ((${auditDeleted} OR "audioDeletedAt">${new Date(now.getTime()-48*3600000)})
+    AND ("audioCleanupCheckedAt" IS NULL OR "audioCleanupCheckedAt"<=${new Date(now.getTime()-3600000)})))
+   ORDER BY id ASC LIMIT ${limit} FOR UPDATE SKIP LOCKED`;
+  for(const simulation of [true,false]){
+   const ids=jobs.filter(j=>['uploading','queued'].includes(j.status)&&isSimulation(j)===simulation).map(j=>j.id);
+   if(ids.length)await tx.job.updateMany({where:{id:{in:ids}},data:{status:'failed',finishedAt:now,progress:{message:'Audio kedaluwarsa sebelum diproses. Unggah rekaman lagi.',simulation}}});
+  }
+  return jobs;
+ });
+ if(!rows.length)return empty;
+ const valid:{job:Job;audio:AudioInput}[]=[];let pending=0;
+ for(const job of rows){const parsed=audioSchema.safeParse(job.audio);if(parsed.success)valid.push({job,audio:parsed.data});else pending++;}
+ const result={...empty,scanned:rows.length,pending,lastId:rows.at(-1)!.id,
+  eligibleBytes:valid.filter(v=>!v.job.audioDeletedAt).reduce((n,v)=>n+v.audio.size,0)};
+ if(dryRun||!valid.length)return result;
+ // <=25 jobs x <=35 parts = <=875 paths per Storage request.
+ const paths=valid.flatMap(({job,audio})=>audio.hashes.map((_,i)=>partPath(job,i)));
+ try{
+  const {error}=await audioStorage.remove(paths);
+  if(error)return {...result,pending:pending+valid.length};
+ }catch{return {...result,pending:pending+valid.length};}
+ const fresh=valid.filter(v=>!v.job.audioDeletedAt),old=valid.filter(v=>!!v.job.audioDeletedAt);
+ const updated=fresh.length?await prisma.job.updateMany({where:{id:{in:fresh.map(v=>v.job.id)},audioDeletedAt:null},data:{audioDeletedAt:now,audioCleanupCheckedAt:now}}):{count:0};
+ if(old.length)await prisma.job.updateMany({where:{id:{in:old.map(v=>v.job.id)}},data:{audioCleanupCheckedAt:now}});
+ return {...result,deleted:updated.count,estimatedBytesReleased:updated.count===fresh.length?fresh.reduce((n,v)=>n+v.audio.size,0):0};
+}
+
+// Small opportunistic cleanup for interactive requests; preserves the existing API.
 export async function cleanupAudio(ownerId?:string,limit=3,now=new Date()){
- if(!audioStorage)return {deleted:0,pending:0};
- const due=await prisma.job.findMany({where:{kind:'bird',...(ownerId?{ownerId}:{}),status:{not:'running'},audioExpiresAt:{lte:now},OR:[{audioDeletedAt:null},{audioDeletedAt:{gt:new Date(now.getTime()-48*3600000)},OR:[{audioCleanupCheckedAt:null},{audioCleanupCheckedAt:{lte:new Date(now.getTime()-3600000)}}]}]},orderBy:{audioCleanupCheckedAt:{sort:'asc',nulls:'first'}},take:limit});
- let deleted=0,pending=0;
- for(const job of due){
-  const audio=audioOf(job);
-  // Expire first so finalization cannot queue a job while deletion runs.
-  await prisma.job.updateMany({where:{id:job.id,status:{in:['uploading','queued']}},data:{status:'failed',finishedAt:now,progress:{message:'Audio kedaluwarsa sebelum diproses. Unggah rekaman lagi.',simulation:isSimulation(job)}}});
-  const fresh=await prisma.job.findUniqueOrThrow({where:{id:job.id}});
-  if(fresh.status==='running')continue;
-  const {error}=await audioStorage.remove(audio.hashes.map((_,i)=>partPath(job,i)));
-  if(error){pending++;continue;}
-  await prisma.job.update({where:{id:job.id},data:{audioDeletedAt:job.audioDeletedAt||now,audioCleanupCheckedAt:now}});
-  if(!job.audioDeletedAt)deleted++;
- }
+ const {deleted,pending}=await cleanupBatch(ownerId,Math.min(25,Math.max(1,limit)),now);
  return {deleted,pending};
+}
+
+export async function cleanupAudioSweep({ownerId,now=new Date(),dryRun=false,maxJobs=10000,maxDurationMs=45000}: {ownerId?:string;now?:Date;dryRun?:boolean;maxJobs?:number;maxDurationMs?:number}={}){
+ requireAudioStorage();
+ const started=Date.now(),deadline=started+maxDurationMs;
+ let scanned=0,deleted=0,pending=0,estimatedBytesReleased=0,eligibleBytes=0,lastId='',batches=0;
+ while(scanned<maxJobs&&Date.now()<deadline){
+  const limit=Math.min(25,maxJobs-scanned);
+  const b=await cleanupBatch(ownerId,limit,now,lastId,dryRun,true);
+  if(!b.scanned)break;
+  scanned+=b.scanned;deleted+=b.deleted;pending+=b.pending;estimatedBytesReleased+=b.estimatedBytesReleased;eligibleBytes+=b.eligibleBytes;lastId=b.lastId;batches++;
+  if(b.scanned<limit)break;
+ }
+ const remaining=await prisma.job.count({where:cleanupWhere(ownerId,now,dryRun?lastId:'',true)});
+ return {dryRun,scanned,deleted,pending,remaining,batches,estimatedBytesReleased,eligibleBytes,durationMs:Date.now()-started,cutoff:now.toISOString()};
 }

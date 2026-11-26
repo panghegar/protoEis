@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Validate production configuration checker
-        run: node --test scripts/check-deploy-config.test.mjs
+        run: node --test scripts/check-deploy-config.test.mjs scripts/ensure-cron-secret.test.mjs
       - name: Package worker download
         run: python scripts/package-worker.py
       - name: Test worker and launcher
@@ -145,6 +145,8 @@ jobs:
           python-version: '3.12'
       - name: Check required secrets and migration target
         run: node scripts/check-deploy-config.mjs
+      - name: Ensure production backend cron secret
+        run: node scripts/ensure-cron-secret.mjs
       - name: Install deployment CLI
         run: npm install --global vercel@67.0.0
       - name: Prepare Prisma CLI

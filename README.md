@@ -26,6 +26,10 @@ Panduan terbaru: [Integrasi model burung sementara](docs/INTEGRASI-MODEL-BURUNG.
 
 Menu Identifikasi suara menyediakan alur unggah satu WAV atau MP3, transfer multipart 20 MiB langsung ke Storage privat, antrean worker laptop, progres/pembatalan, hasil per segmen, dan XLSX. Audio kedaluwarsa 24 jam setelah tugas berakhir; hasil tetap disimpan di database. Penghapusan fisik saat tidak ada trafik memerlukan Supabase Cron. Panduan setup bucket, migrasi, worker baru, dan penjadwal ada di [docs/BIRD-AUDIO.md](docs/BIRD-AUDIO.md).
 
+## Pembersihan audio bulanan
+
+Jadwal tanggal 1 sekitar 00.00 WIB menghapus audio kedaluwarsa, mempertahankan audio aktif/baru serta hasil identifikasi. Penjadwalan otomatis hanya menggunakan Vercel Cron pada Production, dengan metadata tugas pada database Supabase. Panduan aktivasi, preview, log, dan penghematan storage ada pada [docs/AUDIO-CLEANUP.md](docs/AUDIO-CLEANUP.md).
+
 ## Menjalankan worker tanpa terminal (Windows)
 
 Buka halaman **Perangkat lokal**. Tombol **Siapkan worker (Windows)** mengunduh ZIP launcher; ekstrak, lalu jalankan INSTALL.cmd sekali. Python 3.12 dengan Tcl/Tk harus tersedia. Launcher menyediakan tombol Siapkan dependensi, Impor koneksi, Jalankan worker, dan Hentikan worker.

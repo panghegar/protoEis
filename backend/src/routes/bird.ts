@@ -4,8 +4,9 @@ import {prisma} from '../config/prisma.js';
 import {audioStorage} from '../config/storage.js';
 import {requireUser,requireWorker,equal,hash,type AuthRequest} from '../middleware/auth.js';
 import {ApiError,expireJobs,ownedLease,progress} from '../services/jobs.js';
-import {audioSchema,audioOf,audioDuration,isSimulation,CHUNK_BYTES,MAX_AUDIO_BYTES,AUDIO_QUOTA_BYTES,RETENTION_MS,cleanupAudio,partPath,partSize,publicBird,requireAudioStorage,requireLiveAudio} from '../services/bird.js';
+import {audioSchema,audioOf,audioDuration,isSimulation,CHUNK_BYTES,MAX_AUDIO_BYTES,AUDIO_QUOTA_BYTES,RETENTION_MS,cleanupAudio,cleanupAudioSweep,partPath,partSize,publicBird,requireAudioStorage,requireLiveAudio} from '../services/bird.js';
 import {birdWorkbook} from '../services/bird-xlsx.js';
+import {isFirstDayInJakarta} from '../services/audio-cleanup-schedule.js';
 const router=Router(),id=z.string().uuid(),lease=z.string().regex(/^[a-f0-9]{64}$/);
 const leaseBody=z.object({lease}).strict();
 const birdProgress=z.object({percent:z.number().min(0).max(100),phase:z.enum(['download','process','finish']),message:z.string().max(1000),processedSegments:z.number().int().min(0).max(2400).default(0),totalSegments:z.number().int().min(1).max(2400),simulation:z.boolean()}).strict();
@@ -119,10 +120,11 @@ router.post('/worker/bird-jobs/:id/complete',requireWorker,async(req:AuthRequest
   await tx.job.update({where:{id:jobId},data:{status:terminal,finishedAt:new Date(),leaseExpiresAt:null,audioExpiresAt:new Date(Date.now()+RETENTION_MS),progress:{...(job.progress as object),percent:terminal==='completed'?100:Number((job.progress as {percent?:number}).percent||0),simulation:isSimulation(job),message:b.message}}});return terminal;
  });res.json({status});
 });
-router.all('/internal/audio-cleanup',async(req,res)=>{
+router.all(['/internal/audio-cleanup','/internal/audio-cleanup/monthly'],async(req,res)=>{
  if(!['GET','POST'].includes(req.method)){res.sendStatus(405);return;}
  const configured=process.env.CRON_SECRET,provided=(req.headers.authorization||'').replace(/^Bearer /,'');
  if(!configured||configured.length<32||!equal(provided,configured)){res.sendStatus(401);return;}
- await expireJobs();res.json(await cleanupAudio(undefined,10));
+ if(req.path.endsWith('/monthly')&&!isFirstDayInJakarta()){res.json({skipped:true,reason:'Di luar tanggal 1 WIB.',timeZone:'Asia/Jakarta'});return;}
+ await expireJobs();const result=await cleanupAudioSweep();console.info('Audio cleanup:',JSON.stringify(result));res.status(result.pending||result.remaining?503:200).json(result);
 });
 export default router;
