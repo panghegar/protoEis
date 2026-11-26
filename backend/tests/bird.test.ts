@@ -68,7 +68,7 @@ test('WAV multipart, mixed queue, Python worker, XLSX, retention, isolation and 
   writeFileSync(join(temp,'input.json'),JSON.stringify({apiUrl,token:worker.token,job:claimed,root:join(temp,'worker')}));
   const code="import sys,json,urllib.request\nfrom pathlib import Path\nsys.path.insert(0,sys.argv[1])\nfrom bird_worker import execute_bird\nc=json.loads(Path(sys.argv[2]).read_text())\nclass Client:\n def post(self,path,body):\n  req=urllib.request.Request(c['apiUrl']+path,data=json.dumps(body).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+c['token']},method='POST')\n  with urllib.request.urlopen(req,timeout=20) as r:return json.load(r)\nroot=Path(c['root']);root.mkdir()\nexecute_bird(Client(),c['job'],{'cuda':False,'gpu':None,'vram_gb':None,'torch':'fixture','python':'3.12','bird_audio_version':1},root,root/'worker.stop')\n";
   writeFileSync(join(temp,'run.py'),code);
-  const python=resolve('../worker/.venv/Scripts/python.exe');
+  const python=process.env.PYTHON_EXECUTABLE || (process.platform==='win32' ? resolve('../worker/.venv/Scripts/python.exe') : 'python3');
   const output=await exec(python,[join(temp,'run.py'),resolve('../worker'),join(temp,'input.json')],{timeout:60000});assert.match(output.stdout,/completed/);
   const done=await prisma.job.findUniqueOrThrow({where:{id:job.id}});assert.equal(done.status,'completed');assert.equal((done.progress as {percent:number}).percent,100);
   const results=await get('/bird-jobs/'+job.id+'/segments',token);assert.equal(results.body.total,Math.ceil(duration/3));assert.equal(results.body.items[0].species,'Contoh spesies A');

@@ -8,5 +8,8 @@
       "source": "/((?!assets/|downloads/).*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": false
+  }
 }
