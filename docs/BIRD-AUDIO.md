@@ -1,5 +1,8 @@
 # Identifikasi suara burung — prototipe simulasi
 
+> Pembaruan 26 November 2026: model burung sementara dan input WAV/MP3 telah diintegrasikan. Panduan terkini ada pada [INTEGRASI-MODEL-BURUNG.md](INTEGRASI-MODEL-BURUNG.md). Isi berikut mencatat tahap implementasi sebelumnya; keterangan simulasi dan versi worker lama adalah konteks historis.
+
+
 Implementasi: 13 November 2026. Model Syafiq belum tersedia. Seluruh label spesies dan nilai keyakinan adalah **contoh simulasi**, termasuk tabel dan XLSX. Modul ini menjalankan inferensi simulasi, bukan training model burung.
 
 ## Alur pengguna
@@ -120,31 +123,25 @@ Skrip tidak membuat policy publik. Jika bucket dengan nama sama sudah publik, sk
 
 Jika Storage belum dikonfigurasi, halaman menampilkan pesan penyiapan; server menolak unggahan dengan 503. Tidak ada fallback yang berpura-pura menyimpan audio di Vercel.
 
-### 3. Penjadwal penghapusan
+### 3. Penjadwal penghapusan — Vercel saja
 
-Endpoint: `POST https://YOUR_BACKEND/api/internal/audio-cleanup` dengan header `Authorization: Bearer CRON_SECRET`. GET juga diterima untuk kompatibilitas cron. Endpoint tidak memerlukan akun dashboard tetapi memerlukan secret minimal 32 karakter.
+Jadwal pembersihan adalah tanggal 1 pukul 00.00 WIB, melalui Vercel Cron pada
+deployment Production. Installer dan task penjadwal laptop sudah dihapus.
+Panduan aktivasi, pemeriksaan tanggal WIB, secret, dan batas ketepatan Hobby ada
+pada [AUDIO-CLEANUP.md](AUDIO-CLEANUP.md).
 
-Di Supabase, aktifkan Cron/pg_cron dan pg_net. Simpan URL endpoint dan secret di Vault melalui dashboard sebagai `eis_audio_cleanup_url` dan `eis_audio_cleanup_secret`. Jangan commit nilainya. Jalankan SQL berikut setelah secret tersedia:
+Konfigurasi `backend/vercel.json` memanggil
+`GET /api/internal/audio-cleanup/monthly`. Endpoint memeriksa `CRON_SECRET` dan
+tanggal pada zona `Asia/Jakarta` sebelum menghapus audio kedaluwarsa. CI/CD
+menyiapkan secret backend Production bila belum ada, lalu deployment
+mendaftarkan jadwal. Tidak perlu mengaktifkan Supabase Cron atau Task Scheduler.
 
-```sql
-select cron.schedule(
-  'eis-audio-cleanup',
-  '*/15 * * * *',
-  $$
-  select net.http_post(
-    url := (select decrypted_secret from vault.decrypted_secrets where name = 'eis_audio_cleanup_url' limit 1),
-    headers := jsonb_build_object(
-      'Content-Type', 'application/json',
-      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'eis_audio_cleanup_secret' limit 1)
-    ),
-    body := '{}'::jsonb,
-    timeout_milliseconds := 30000
-  );
-  $$
-);
-```
+Metadata tugas harus tersedia pada database Supabase yang dipakai backend
+Production. Cron cloud tidak membaca PostgreSQL laptop. Untuk audio uji yang
+masih hanya tercatat di database lokal, gunakan pembersihan manual bila diperlukan.
 
-Sebelum membuat jadwal, periksa apakah nama jadwal sudah ada; ubah jadwal yang ada, jangan membuat duplikat. Periksa respons endpoint dan riwayat Cron setelah dipasang. URL endpoint harus dapat dijangkau tanpa login Vercel; CRON_SECRET tetap diperiksa oleh aplikasi. Jangan memberikan akses dashboard/database kepada pihak yang tidak berwenang membaca secret.
+Endpoint `/api/internal/audio-cleanup` tetap tersedia untuk pemeliharaan manual
+dengan secret yang sama. Tidak ada penjadwal tambahan untuk endpoint manual ini.
 
 ### 4. Redeploy dan perbarui worker
 

@@ -2,6 +2,9 @@
 import hashlib
 import json
 import math
+import os
+import subprocess
+from bird_model import installed_model,ready_model,bird_python
 from pathlib import Path
 import time
 import urllib.request
@@ -10,7 +13,7 @@ import uuid
 import wave
 from trainer import atomic_json
 
-VERSION=1
+VERSION=2
 CHUNK_BYTES=20*1024*1024
 MAX_BYTES=700*1024*1024
 
@@ -45,16 +48,18 @@ def execute_bird(client,job,capabilities,root,stop):
     runs=(root/'bird-runs');runs.mkdir(exist_ok=True)
     folder=runs/ident
     folder.mkdir(exist_ok=True)
-    path=folder/'rekaman-sementara.wav'
-    audio=job['audio'];total=math.ceil(audio['wav']['duration']/3)
-    state=dict(simulation=True,percent=0,phase='download',processedSegments=0,totalSegments=total,message='SIMULASI: menyiapkan rekaman.')
+    audio=job['audio'];simulation=job.get('config',{}).get('mode')!='inference'
+    path=folder/('rekaman-sementara.mp3' if audio.get('mp3') else 'rekaman-sementara.wav')
+    total=math.ceil((audio.get('wav') or audio['mp3'])['duration']/3)
+    process=None;result_count=None
+    state=dict(simulation=simulation,percent=0,phase='download',processedSegments=0,totalSegments=total,message='Menyiapkan rekaman.')
     sequence=0;last_ack=time.monotonic();last_progress=0;last_hardware=0
-    terminal='failed';message='Proses simulasi belum selesai.'
+    terminal='failed';message='Proses identifikasi belum selesai.'
     active=root/'active-bird.json'
     atomic_json(active,{'id':ident,'lease':job['lease']})
     def check():
         if stop.exists():raise Cancelled('Worker dihentikan oleh pengguna.')
-        if time.monotonic()-last_ack>140:raise RuntimeError('API tidak terjangkau; simulasi dihentikan agar lease tidak tumpang tindih.')
+        if time.monotonic()-last_ack>140:raise RuntimeError('API tidak terjangkau; identifikasi dihentikan agar lease tidak tumpang tindih.')
     def post(suffix,body):
         nonlocal last_ack
         while True:
@@ -76,7 +81,7 @@ def execute_bird(client,job,capabilities,root,stop):
         sequence+=1
         reply=post('progress',{'sequence':sequence,'progress':dict(state)})
         last_progress=time.monotonic()
-        if reply['cancelRequested']:raise Cancelled('Simulasi dibatalkan pengguna.')
+        if reply['cancelRequested']:raise Cancelled('Identifikasi dibatalkan pengguna.')
         if time.monotonic()-last_hardware>=15:
             try:
                 client.post('/worker/heartbeat',capabilities);last_hardware=time.monotonic()
@@ -115,55 +120,98 @@ def execute_bird(client,job,capabilities,root,stop):
                         pulse(force=True);ticket=post('download-ticket',{'index':index});time.sleep(1)
                 if not success:raise RuntimeError('Unduhan tidak selesai.')
                 downloaded+=size
-        actual=inspect_wav(path)
-        for key in ('channels','sampleRate','bits','frames'):
-            if actual[key]!=audio['wav'][key]:raise ValueError('Isi WAV berbeda dari metadata unggahan.')
-        if abs(actual['duration']-audio['wav']['duration'])>.001:raise ValueError('Durasi WAV berbeda dari manifest.')
-        state['phase']='process';pulse(25,'SIMULASI: membaca WAV; label dan keyakinan adalah contoh.',True)
-        batch=[];local_results=[]
-        with wave.open(str(path),'rb') as source:
-            for ordinal in range(total):
+        if simulation:
+            actual=inspect_wav(path)
+            for key in ('channels','sampleRate','bits','frames'):
+                if actual[key]!=audio['wav'][key]:raise ValueError('Isi WAV berbeda dari metadata unggahan.')
+            if abs(actual['duration']-audio['wav']['duration'])>.001:raise ValueError('Durasi WAV berbeda dari manifest.')
+            state['phase']='process';pulse(25,'SIMULASI: membaca WAV; label dan keyakinan adalah contoh.',True)
+            batch=[];local_results=[]
+            with wave.open(str(path),'rb') as source:
+                for ordinal in range(total):
+                    check()
+                    frame_count=min(3*actual['sampleRate'],actual['frames']-ordinal*3*actual['sampleRate'])
+                    block=source.readframes(frame_count)
+                    if len(block)!=frame_count*actual['channels']*(actual['bits']//8):raise ValueError('Data WAV terpotong atau rusak.')
+                    row=simulation_segment(ordinal,actual['duration']);batch.append(row);local_results.append(row)
+                    if len(batch)==50 or ordinal==total-1:
+                        post('segments',{'segments':batch});batch=[]
+                    state['processedSegments']=ordinal+1
+                    pulse(25+70*(ordinal+1)/total,'SIMULASI: segmen '+str(ordinal+1)+'/'+str(total)+'.')
+                    time.sleep(.02)
+            state['phase']='finish';pulse(99,'Menyimpan hasil simulasi dan menyiapkan unduhan XLSX.',True)
+            atomic_json(folder/'hasil-simulasi.json',{'simulation':True,'note':'BUKAN hasil identifikasi burung. Model belum tersedia.','audio':{k:v for k,v in audio.items() if k!='hashes'},'segments':local_results})
+            terminal='completed';message='Simulasi selesai. Label dan keyakinan adalah data contoh, bukan prediksi model.'
+        else:
+            if audio.get('wav'):
+                actual=inspect_wav(path)
+                if any(actual[key]!=audio['wav'][key] for key in ('channels','sampleRate','bits','frames')):
+                    raise ValueError('Isi WAV berbeda dari metadata unggahan.')
+            model,_=installed_model(root,verify=True)
+            if not ready_model(root) or model['id']!=job['config']['model']['id']:
+                raise ValueError('Model lokal berbeda dari model yang dipilih saat tugas dibuat. Impor dan siapkan model yang sesuai.')
+            state['phase']='process';pulse(27,'Memuat model Sumatra sementara pada CPU.',True)
+            with (folder/'inference.log').open('wb') as log:
+                process=subprocess.Popen([str(bird_python(root)),str(root/'bird_inference.py'),'infer',str(root),str(path),str(folder),str(os.getpid())],
+                    cwd=root,stdout=log,stderr=subprocess.STDOUT,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+            duration_sent=False
+            while process.poll() is None:
                 check()
-                frame_count=min(3*actual['sampleRate'],actual['frames']-ordinal*3*actual['sampleRate'])
-                block=source.readframes(frame_count)
-                if len(block)!=frame_count*actual['channels']*(actual['bits']//8):raise ValueError('Data WAV terpotong atau rusak.')
-                row=simulation_segment(ordinal,actual['duration']);batch.append(row);local_results.append(row)
-                if len(batch)==50 or ordinal==total-1:
-                    post('segments',{'segments':batch});batch=[]
-                state['processedSegments']=ordinal+1
-                pulse(25+70*(ordinal+1)/total,'SIMULASI: segmen '+str(ordinal+1)+'/'+str(total)+'.')
-                time.sleep(.02)
-        state['phase']='finish';pulse(99,'Menyimpan hasil simulasi dan menyiapkan unduhan XLSX.',True)
-        atomic_json(folder/'hasil-simulasi.json',{'simulation':True,'note':'BUKAN hasil identifikasi burung. Model belum tersedia.','audio':{k:v for k,v in audio.items() if k!='hashes'},'segments':local_results})
-        terminal='completed';message='Simulasi selesai. Label dan keyakinan adalah data contoh, bukan prediksi model.'
+                try:
+                    info=json.loads((folder/'inference-state.json').read_text(encoding='utf-8'))
+                    if not duration_sent:
+                        post('metadata',{'duration':info['duration']});duration_sent=True
+                        state['totalSegments']=math.ceil(info['duration']/3)
+                    pulse(info['percent'],info['message'])
+                except (FileNotFoundError,json.JSONDecodeError):pulse()
+                time.sleep(.5)
+            if process.returncode!=0:
+                raise RuntimeError('Inference berhenti. Periksa inference.log pada folder hasil lokal.')
+            result=json.loads((folder/'inference-result.json').read_text(encoding='utf-8'))
+            if result['model']['id']!=model['id']:raise ValueError('ID model hasil tidak sesuai.')
+            if not duration_sent:post('metadata',{'duration':result['duration']})
+            state['totalSegments']=math.ceil(result['duration']/3)
+            rows=result['segments'];result_count=len(rows)
+            for offset in range(0,len(rows),50):
+                batch=rows[offset:offset+50];post('segments',{'segments':batch})
+                state['processedSegments']=batch[-1]['windowIndex']+1
+                pulse(82+16*(offset+len(batch))/len(rows),'Menyimpan hasil identifikasi ke website.')
+            state['phase']='finish';pulse(99,'Menyiapkan hasil identifikasi dan XLSX.',True)
+            terminal='completed';message='Identifikasi selesai menggunakan model Sumatra sementara. Confidence adalah skor model, bukan ukuran akurasi.'
     except Cancelled as exc:
         terminal='cancelled';message=str(exc)
     except Exception as exc:
         terminal='failed'
         # Never include signed URLs or credentials in the API report.
-        message='Simulasi gagal ('+type(exc).__name__+'). '+(str(exc) if isinstance(exc,ValueError) else 'Periksa koneksi, akses perangkat, dan kelengkapan file WAV.')
+        message=('Simulasi' if simulation else 'Identifikasi')+' gagal ('+type(exc).__name__+'). '+(str(exc) if isinstance(exc,ValueError) else 'Periksa inference.log di laptop, koneksi, dan kelengkapan WAV/MP3.')
     finally:
+        if process and process.poll() is None:
+            process.terminate()
+            try:process.wait(timeout=10)
+            except subprocess.TimeoutExpired:process.kill();process.wait(timeout=10)
         path.unlink(missing_ok=True)
         # Completion must still be sent after a local stop request.
         deadline=time.monotonic()+35
+        reported=False
         while time.monotonic()<deadline:
             try:
-                reply=client.post('/worker/bird-jobs/'+ident+'/complete',{'lease':job['lease'],'status':terminal,'message':message})
-                terminal=reply['status'];break
+                reply=client.post('/worker/bird-jobs/'+ident+'/complete',{'lease':job['lease'],'status':terminal,'message':message,**({'resultCount':result_count} if result_count else {})})
+                terminal=reply['status'];reported=True;break
             except Exception as exc:
                 if getattr(exc,'code',None) in (400,401,403,404,409,410):break
                 time.sleep(2)
-        atomic_json(folder/'status.json',{**state,'status':terminal,'message':message})
+        if not reported:message+=' Status akhir belum dikonfirmasi API; periksa website. Hasil komputasi tetap lokal.'
+        atomic_json(folder/'status.json',{**state,'status':terminal,'reported':reported,'message':message,**({'resultCount':result_count} if result_count else {})})
         active.unlink(missing_ok=True)
-        print('Identifikasi SIMULASI '+ident[:8]+': '+terminal+'. '+message,flush=True)
+        print(('Identifikasi SIMULASI ' if simulation else 'Identifikasi model sementara ')+ident[:8]+': '+terminal+'. '+message,flush=True)
 
 def recover_bird(client,root):
     path=root/'active-bird.json'
     if not path.exists():return
     record=json.loads(path.read_text(encoding='utf-8'))
     ident=str(uuid.UUID(record['id']))
-    (root/'bird-runs'/ident/'rekaman-sementara.wav').unlink(missing_ok=True)
-    try:client.post('/worker/bird-jobs/'+ident+'/complete',{'lease':record['lease'],'status':'failed','message':'Worker dimulai ulang setelah simulasi terputus. Buat proses baru; hasil lama tetap tersimpan.'})
+    for suffix in ('wav','mp3'):(root/'bird-runs'/ident/('rekaman-sementara.'+suffix)).unlink(missing_ok=True)
+    try:client.post('/worker/bird-jobs/'+ident+'/complete',{'lease':record['lease'],'status':'failed','message':'Worker dimulai ulang setelah identifikasi terputus. Buat proses baru; hasil lama tetap tersimpan.'})
     except Exception as exc:
         if getattr(exc,'code',None) not in (401,403,404,409,410):raise
     path.unlink(missing_ok=True)

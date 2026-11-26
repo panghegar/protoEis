@@ -16,5 +16,16 @@ INSTALL mendaftarkan penghubung hanya pada akun Windows saat ini, tanpa admin. F
 
 Koneksi dan hasil tetap berada dalam folder worker ini. Jangan membagikan worker.json. Paket unduhan tidak menyertakan token, data training pengguna, atau lingkungan Python laptop pembuat.
 
-IDENTIFIKASI WAV
-Paket ini mendukung mode simulasi identifikasi audio WAV melalui menu Identifikasi suara. Perbarui paket dari website untuk memakai fitur baru. Impor koneksi yang sudah dimiliki, lalu jalankan worker. Label/keyakinan simulasi bukan prediksi model.
+IDENTIFIKASI BURUNG WAV / MP3 — MODEL SEMENTARA
+1. Hentikan worker sebelum mengganti model atau menyiapkan dependensi.
+2. Klik Impor ZIP model burung dan pilih sumatra_model_inference_package.zip dari Syafiq.
+3. Klik Siapkan model burung (CPU). Environment BirdNET/TensorFlow terpisah dari PyTorch. Perlu internet dan ruang disk beberapa GB. Gunakan folder pendek agar instalasi Windows berhasil.
+4. Setelah status model siap, jalankan worker kembali. Website menampilkan model sementara siap setelah heartbeat terbaru.
+5. Unggah WAV PCM atau MP3 pada menu Identifikasi suara. Batas prototipe 700 MiB dan 2 jam. Biarkan laptop menyala.
+6. Hasil memuat waktu, spesies, confidence, dan sumber skor. Beberapa spesies dapat terdeteksi bersamaan.
+7. Tidak ada deteksi dibedakan dari unknown. Confidence adalah skor model, bukan persentase akurasi. Model belum final.
+8. Unduh XLSX dari website. Jika hasil dibagi beberapa bagian, unduh seluruh bagiannya.
+
+Model dan rekaman tidak masuk paket worker unduhan. Model diimpor lokal, belum diunduh otomatis dari layanan cloud. Jangan membagikan worker.json atau direktori hasil berisi data sensitif.
+Training model burung belum tersedia dalam paket ini; halaman Eksperimen tetap merupakan demo training digits.
+Hasil simulasi lama tetap ditandai SIMULASI dan bukan prediksi model.

@@ -3,5 +3,16 @@
   "buildCommand": "npm run build",
   "git": {
     "deploymentEnabled": false
-  }
+  },
+  "functions": {
+    "src/app.ts": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/internal/audio-cleanup/monthly",
+      "schedule": "0 17 28-31 * *"
+    }
+  ]
 }

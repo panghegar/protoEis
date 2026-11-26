@@ -18,11 +18,17 @@ Proyek berada di `D:\COOLYEAH\TA\EIS\code\prototype`. Referensi implementasi ada
 
 Versi patch/minor beberapa paket diperbarui dari acuan untuk mengatasi advisori npm; bcrypt memakai versi 6 dengan API hashing yang sama. Versi tepat dikunci di masing-masing package-lock.json.
 
-**Model masih demonstrasi:** dataset digits berisi 1.797 gambar angka 8×8, MLP 64→128→64→10. Model burung/capung asli, preprocessing Excel umum, raster, heatmap, dan rekomendasi EIS belum diimplementasikan. Modul identifikasi audio WAV tersedia dalam mode simulasi yang ditandai jelas; label dan keyakinannya bukan prediksi model. Ini validasi arsitektur training online dengan worker laptop. Semua eksperimen dimulai dari awal; resume checkpoint belum tersedia.
+**Status model:** halaman Eksperimen tetap memakai demo digits (1.797 gambar angka 8x8, MLP 64→128→64→10). Identifikasi suara kini memakai BirdNET global dan classifier Sumatra sementara dari Syafiq, melalui worker CPU lokal, dengan input WAV/MP3 dan hasil XLSX. Model final dan training model burung belum tersedia. Modul capung, preprocessing Excel umum, raster, heatmap, dan rekomendasi EIS belum diimplementasikan. Training demo dimulai dari awal; resume checkpoint belum tersedia.
 
-## Identifikasi suara burung (simulasi)
+## Identifikasi suara burung (model sementara)
 
-Menu Identifikasi suara menyediakan alur unggah satu WAV, transfer multipart 20 MiB langsung ke Storage privat, antrean worker laptop, progres/pembatalan, hasil per segmen, dan XLSX. Audio kedaluwarsa 24 jam setelah tugas berakhir; hasil tetap disimpan di database. Penghapusan fisik saat tidak ada trafik memerlukan Supabase Cron. Panduan setup bucket, migrasi, worker baru, dan penjadwal ada di [docs/BIRD-AUDIO.md](docs/BIRD-AUDIO.md).
+Panduan terbaru: [Integrasi model burung sementara](docs/INTEGRASI-MODEL-BURUNG.md). Model diimpor melalui ZIP pada launcher dan runtime disiapkan terpisah dari PyTorch.
+
+Menu Identifikasi suara menyediakan alur unggah satu WAV atau MP3, transfer multipart 20 MiB langsung ke Storage privat, antrean worker laptop, progres/pembatalan, hasil per segmen, dan XLSX. Audio kedaluwarsa 24 jam setelah tugas berakhir; hasil tetap disimpan di database. Penghapusan fisik saat tidak ada trafik memerlukan Supabase Cron. Panduan setup bucket, migrasi, worker baru, dan penjadwal ada di [docs/BIRD-AUDIO.md](docs/BIRD-AUDIO.md).
+
+## Pembersihan audio bulanan
+
+Jadwal tanggal 1 sekitar 00.00 WIB menghapus audio kedaluwarsa, mempertahankan audio aktif/baru serta hasil identifikasi. Penjadwalan otomatis hanya menggunakan Vercel Cron pada Production, dengan metadata tugas pada database Supabase. Panduan aktivasi, preview, log, dan penghematan storage ada pada [docs/AUDIO-CLEANUP.md](docs/AUDIO-CLEANUP.md).
 
 ## Menjalankan worker tanpa terminal (Windows)
 

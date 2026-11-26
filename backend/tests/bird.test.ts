@@ -104,6 +104,43 @@ test('WAV multipart, mixed queue, Python worker, XLSX, retention, isolation and 
   const cancelReply=await post('/worker/bird-jobs/'+running.id+'/progress',worker.token,{lease:runningClaim.lease,sequence:1,progress:{percent:5,phase:'download',message:'fixture',processedSegments:0,totalSegments:Math.ceil(duration/3),simulation:true}});
   assert.equal(cancelReply.body.cancelRequested,true);
   assert.equal((await post('/worker/bird-jobs/'+running.id+'/complete',worker.token,{lease:runningClaim.lease,status:'completed',message:'cancel race'})).body.status,'cancelled');
+  // Real-model contract: explicit mode, exact model capability, MP3 decoder duration,
+  // simultaneous detections, no-detection versus unknown, coverage and versioned XLSX.
+  const model={id:'a'.repeat(64),name:'Sumatra fixture — sementara',temporary:true,pipeline:'sumatra-enhanced-v1',labelCount:272};
+  const mp3={name:'recording.mp3',size:128,mp3:{duration:9},hashes:[createHash('sha256').update(Buffer.alloc(128)).digest('hex')]};
+  assert.equal((await post('/bird-jobs',token,{workerId:worker.id,audio:mp3,mode:'inference'})).status,409,'Old simulation worker cannot accept a model job.');
+  assert.equal((await post('/worker/heartbeat',worker.token,{...caps,bird_audio_version:2,bird_model:model})).status,200);
+  const realResponse=await post('/bird-jobs',token,{workerId:worker.id,audio:mp3,mode:'inference'});
+  assert.equal(realResponse.status,201,JSON.stringify(realResponse.body));const real=realResponse.body;
+  assert.equal(real.simulation,false);assert.equal(real.config.model.id,model.id);
+  objects.set(partPath(real,0),Buffer.alloc(128));
+  assert.equal((await post('/bird-jobs/'+real.id+'/finalize',token,{})).status,200);
+  await post('/worker/heartbeat',worker.token,caps);
+  assert.equal((await post('/worker/claim',worker.token,{})).body.job,null);
+  await post('/worker/heartbeat',worker.token,{...caps,bird_audio_version:2,bird_model:{...model,id:'b'.repeat(64)}});
+  assert.equal((await post('/worker/claim',worker.token,{})).body.job,null,'Different model versions cannot claim queued work.');
+  await post('/worker/heartbeat',worker.token,{...caps,bird_audio_version:2,bird_model:model});
+  const realClaim=(await post('/worker/claim',worker.token,{})).body.job;assert.equal(realClaim.id,real.id);
+  const realPost=(endpoint:string,body:object)=>post('/worker/bird-jobs/'+real.id+'/'+endpoint,worker.token,{lease:realClaim.lease,...body});
+  assert.equal((await realPost('metadata',{duration:7.5,lease:'0'.repeat(64)})).status,409);
+  assert.equal((await realPost('metadata',{duration:7.5})).status,200);
+  assert.equal((await get('/bird-jobs',token)).body.find((j:{id:string})=>j.id===real.id).audio.mp3.duration,7.5);
+  assert.equal((await realPost('progress',{sequence:1,progress:{percent:30,phase:'process',message:'inference',processedSegments:0,totalSegments:3,simulation:true}})).status,400);
+  const detected={ordinal:0,windowIndex:0,startSeconds:0,endSeconds:3,species:'Species A',commonName:'Bird A',confidence:.424,status:'detected',globalConfidence:.2,customConfidence:.8,evidence:'BirdNET + Sumatra'};
+  assert.equal((await realPost('segments',{segments:[{...detected,startSeconds:1}]})).status,400);
+  assert.equal((await realPost('segments',{segments:[{...detected,status:'no_detection'}]})).status,400);
+  assert.equal((await realPost('segments',{segments:[detected,{...detected,ordinal:1,species:'Species B',confidence:.8},{...detected,ordinal:2,windowIndex:1,startSeconds:3,endSeconds:6,species:'Tidak ada deteksi',commonName:'',confidence:0,status:'no_detection',globalConfidence:null,customConfidence:null,evidence:'Tidak ada skor yang melewati ambang'}]})).status,200);
+  assert.equal((await realPost('complete',{status:'completed',message:'incomplete',resultCount:3})).status,409,'Missing windows cannot pass completion.');
+  assert.equal((await realPost('metadata',{duration:8})).status,409,'Decoder metadata is immutable after results.');
+  assert.equal((await realPost('segments',{segments:[{...detected,ordinal:3,windowIndex:2,startSeconds:6,endSeconds:7.5,species:'unknown',status:'unknown'}]})).status,200);
+  assert.equal((await realPost('complete',{status:'completed',message:'wrong count',resultCount:3})).status,409);
+  assert.equal((await realPost('complete',{status:'completed',message:'temporary model complete',resultCount:4})).body.status,'completed');
+  const realResults=await get('/bird-jobs/'+real.id+'/segments',token);
+  assert.equal(realResults.body.total,4);assert.equal(realResults.body.simulation,false);
+  assert.equal(realResults.body.items[2].status,'no_detection');assert.equal(realResults.body.items[3].status,'unknown');
+  const realExcel=await fetch(apiUrl+'/bird-jobs/'+real.id+'/xlsx',{headers:{Authorization:'Bearer '+token}});
+  assert.equal(realExcel.status,200);writeFileSync(xlsxPath,Buffer.from(await realExcel.arrayBuffer()));
+  const realCheck=await exec(python,['-c',"import sys,zipfile,xml.etree.ElementTree as E\nwith zipfile.ZipFile(sys.argv[1]) as z:\n assert z.testzip() is None\n text=z.read('xl/worksheets/sheet1.xml')\n E.fromstring(text)\n assert b'no_detection' in text and b'unknown' in text and b'Species A' in text\n assert b'<f' not in text\n assert (b'a'*64) in z.read('xl/worksheets/sheet2.xml')\nprint('real OOXML valid')",xlsxPath]);assert.match(realCheck.stdout,/real OOXML valid/);
   assert.equal((await request(app).post('/api/internal/audio-cleanup')).status,401);
   assert.equal((await post('/internal/audio-cleanup',process.env.CRON_SECRET!,{})).status,200);
  }finally{

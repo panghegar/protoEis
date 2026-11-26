@@ -1,5 +1,8 @@
 # Laporan Teknis Implementasi Modul Identifikasi Suara Burung
 
+> Pembaruan 26 November 2026: model burung sementara dan input WAV/MP3 telah diintegrasikan. Panduan terkini ada pada [INTEGRASI-MODEL-BURUNG.md](INTEGRASI-MODEL-BURUNG.md). Isi berikut mencatat tahap implementasi sebelumnya; keterangan simulasi dan versi worker lama adalah konteks historis.
+
+
 Tanggal penyusunan: **13 November 2026**  
 Proyek: **Prototipe EIS Training Studio**  
 Lokasi proyek: `D:\COOLYEAH\TA\EIS\code\prototype`  

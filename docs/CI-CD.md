@@ -47,7 +47,7 @@ Kode dibangun kembali di Vercel dengan environment **Production** yang tersimpan
 
 Environment backend yang tetap diperlukan: `DATABASE_URL`, `JWT_SECRET`, `FRONTEND_ORIGINS`, serta konfigurasi Storage/cleanup bila fitur tersebut digunakan. Environment frontend tetap `VITE_API_BASE_URL` yang menunjuk **domain production backend yang stabil**, berakhiran `/api`, bukan URL deployment sementara. Lihat `DEPLOYMENT.md` dan `BIRD-AUDIO.md`.
 
-Migrasi production dijalankan oleh GitHub Actions sebelum deploy, menggunakan `SUPABASE_MIGRATION_URL` untuk `DATABASE_URL` dan `DIRECT_URL` pada langkah itu saja. Build Vercel hanya generate Prisma dan compile kode. Workflow tidak melakukan seed admin, reset database, upload dataset, penyiapan bucket, ataupun pemasangan Cron. Bucket privat dan Cron yang sudah disiapkan tetap dipakai. Bootstrap cloud baru tetap memerlukan panduan setup terkait.
+Migrasi production dijalankan oleh GitHub Actions sebelum deploy, menggunakan `SUPABASE_MIGRATION_URL` untuk `DATABASE_URL` dan `DIRECT_URL` pada langkah itu saja. Build Vercel hanya generate Prisma dan compile kode. Workflow tidak melakukan seed admin, reset database, upload dataset, atau penyiapan bucket. Untuk cron audio bulanan, workflow membuat CRON_SECRET backend Production bila belum ada, mempertahankan secret yang sudah ada, lalu deployment mendaftarkan jadwal dari backend/vercel.json. Tidak ada repository secret tambahan. Lihat [AUDIO-CLEANUP.md](AUDIO-CLEANUP.md). Bootstrap cloud baru tetap memerlukan panduan setup terkait.
 
 ### Aturan branch yang disarankan
 

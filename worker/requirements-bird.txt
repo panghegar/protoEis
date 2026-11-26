@@ -1,0 +1,7 @@
+# Reviewed dependency versions supplied by Syafiq; separate from PyTorch worker.
+birdnet-analyzer==2.4.0
+tensorflow==2.21.0
+librosa==1.0.0
+resampy==0.4.3
+soundfile==0.14.0
+numpy==2.5.3

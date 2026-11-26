@@ -1,4 +1,7 @@
 # Cara Kerja Prototipe EIS Training Studio
+
+> Pembaruan 26 November 2026: model burung sementara dan input WAV/MP3 telah diintegrasikan. Panduan terkini ada pada [INTEGRASI-MODEL-BURUNG.md](INTEGRASI-MODEL-BURUNG.md). Isi berikut mencatat tahap implementasi sebelumnya; keterangan simulasi dan versi worker lama adalah konteks historis.
+
 ## Bahan presentasi arsitektur website dan worker lokal
 
 Tanggal dokumentasi: 29 Oktober 2026  

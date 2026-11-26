@@ -64,5 +64,11 @@ model BirdSegment {
   endSeconds Float
   species String
   confidence Float
+  windowIndex Int?
+  status String @default("detected")
+  commonName String?
+  globalConfidence Float?
+  customConfidence Float?
+  evidence String?
   @@id([jobId,ordinal])
 }

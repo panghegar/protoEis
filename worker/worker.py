@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import uuid
 from trainer import atomic_json
 from bird_worker import execute_bird,recover_bird
+from bird_model import ready_model,installed_model
 
 ROOT = Path(__file__).resolve().parent
 STOP = ROOT / 'worker.stop'
@@ -45,7 +46,7 @@ class Client:
 def hardware():
     import torch
     available=torch.cuda.is_available()
-    return {'bird_audio_version':1,'cuda':available,'gpu':torch.cuda.get_device_name(0) if available else None,
+    return {'bird_audio_version':2,'bird_model':ready_model(ROOT),'cuda':available,'gpu':torch.cuda.get_device_name(0) if available else None,
         'vram_gb':round(torch.cuda.get_device_properties(0).total_memory/1024**3,1) if available else None,
         'torch':str(torch.__version__),'python':sys.version.split()[0]}
 
@@ -196,6 +197,7 @@ def main():
     if not args.managed: STOP.unlink(missing_ok=True)
     try:
         client=Client(json.loads(args.config.read_text(encoding='utf-8-sig')))
+        if ready_model(ROOT): installed_model(ROOT,verify=True)
         caps=hardware()
         print('Worker EIS | '+(caps['gpu'] or 'CPU')+' | '+client.base,flush=True)
         recover(client)

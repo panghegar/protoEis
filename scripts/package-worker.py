@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import zipfile
 ROOT=Path(__file__).resolve().parents[1]
-FILES=['INSTALL.cmd','BUKA-LAUNCHER.cmd','UNINSTALL-LAUNCHER.py','install_launcher.py','launcher.py','launcher_core.py','worker.py','trainer.py','bird_worker.py','requirements.txt','PANDUAN.txt']
+FILES=['INSTALL.cmd','BUKA-LAUNCHER.cmd','UNINSTALL-LAUNCHER.py','install_launcher.py','launcher.py','launcher_core.py','worker.py','trainer.py','bird_worker.py','bird_model.py','bird_inference.py','requirements-bird.txt','requirements.txt','PANDUAN.txt']
 destination=ROOT/'frontend/public/downloads'
 destination.mkdir(parents=True,exist_ok=True)
 output=destination/'eis-worker-windows.zip'
