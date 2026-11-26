@@ -1,5 +1,9 @@
 # EIS Training Studio — prototipe Vercel + GPU laptop
 
+## CI/CD
+
+Workflow GitHub Actions memeriksa perubahan pada `dev` dan PR menuju `main`. Setelah merge/push ke `main` dan CI lulus, workflow menerapkan migrasi Supabase lalu deploy backend dan frontend melalui Vercel CLI. Aktivasi membutuhkan lima GitHub Actions secrets. Deployment Git otomatis Vercel dinonaktifkan pada konfigurasi proyek agar tidak mendahului CI. Panduan aktivasi dan alur kerja ada di [docs/CI-CD.md](docs/CI-CD.md).
+
 Proyek berada di `D:\COOLYEAH\TA\EIS\code\prototype`. Referensi implementasi adalah folder saudara `endemic-indonesia-frontend` dan `endemic-indonesia-backend`. Kedua repo acuan dan database website EIS tidak diubah.
 
 ## Stack dan batas prototipe

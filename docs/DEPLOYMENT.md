@@ -1,5 +1,9 @@
 # Deployment Vercel dengan training GPU laptop
 
+## CI/CD
+
+Workflow GitHub Actions memeriksa perubahan pada `dev` dan PR menuju `main`. Setelah merge/push ke `main` dan CI lulus, workflow menerapkan migrasi Supabase lalu deploy backend dan frontend melalui Vercel CLI. Aktivasi membutuhkan lima GitHub Actions secrets. Deployment Git otomatis Vercel dinonaktifkan pada konfigurasi proyek agar tidak mendahului CI. Panduan aktivasi dan alur kerja ada di [CI-CD.md](CI-CD.md).
+
 Target: **dua proyek Vercel baru**, satu frontend dan satu backend; satu database PostgreSQL khusus prototipe. GPU tetap pada laptop. Jangan mengganti deployment atau memakai kredensial/database produksi EIS untuk pengujian ini.
 
 ## 1. Persiapan sumber

@@ -1,0 +1,175 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel obsolete dev/PR checks, but never interrupt a production migration.
+concurrency:
+  group: ci-cd-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  frontend-worker:
+    name: Frontend and worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Validate production configuration checker
+        run: node --test scripts/check-deploy-config.test.mjs
+      - name: Package worker download
+        run: python scripts/package-worker.py
+      - name: Test worker and launcher
+        run: |
+          python scripts/test-bird-worker.py
+          python scripts/test-launcher.py
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: https://api.example.invalid/api
+
+  backend:
+    name: Backend and database
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-postgres
+          POSTGRES_DB: eis_ci
+        ports:
+          - 55439:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eis_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:ci-only-postgres@127.0.0.1:55439/eis_ci
+      DIRECT_URL: postgresql://postgres:ci-only-postgres@127.0.0.1:55439/eis_ci
+      JWT_SECRET: ci-only-jwt-secret-never-used-in-production-2026
+      FRONTEND_ORIGINS: http://127.0.0.1:5173
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - uses: actions/setup-python@v6
+        id: python
+        with:
+          python-version: '3.12'
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+      - name: Apply migrations to temporary CI database
+        run: npm run db:deploy
+        working-directory: backend
+      - name: Build backend
+        run: npm run build
+        working-directory: backend
+      - name: Test backend and audio integration
+        run: npm test
+        working-directory: backend
+        env:
+          PYTHON_EXECUTABLE: ${{ steps.python.outputs.python-path }}
+
+  ci:
+    name: CI passed
+    if: ${{ always() }}
+    needs: [frontend-worker, backend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require both check jobs to pass
+        env:
+          FRONTEND_RESULT: ${{ needs.frontend-worker.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+        run: |
+          test "$FRONTEND_RESULT" = success
+          test "$BACKEND_RESULT" = success
+
+  deploy:
+    name: Deploy production
+    needs: ci
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: eis-production
+      cancel-in-progress: false
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_BACKEND_PROJECT_ID: ${{ secrets.VERCEL_BACKEND_PROJECT_ID }}
+      VERCEL_FRONTEND_PROJECT_ID: ${{ secrets.VERCEL_FRONTEND_PROJECT_ID }}
+      SUPABASE_MIGRATION_URL: ${{ secrets.SUPABASE_MIGRATION_URL }}
+      VERCEL_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          # No dependency cache in a job that has production credentials.
+          package-manager-cache: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Check required secrets and migration target
+        run: node scripts/check-deploy-config.mjs
+      - name: Install deployment CLI
+        run: npm install --global vercel@67.0.0
+      - name: Prepare Prisma CLI
+        run: npm ci
+        working-directory: backend
+      - name: Rebuild worker download from this commit
+        run: python scripts/package-worker.py
+      - name: Apply production migrations
+        run: npm run db:deploy
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_MIGRATION_URL }}
+          DIRECT_URL: ${{ secrets.SUPABASE_MIGRATION_URL }}
+      # Run from the repository root. Vercel applies each project's configured
+      # Root Directory (backend/frontend) and Production environment variables.
+      - name: Deploy backend and wait for Vercel build
+        run: vercel deploy --prod --yes --token="$VERCEL_TOKEN" > "$RUNNER_TEMP/backend-deploy-url.txt"
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_BACKEND_PROJECT_ID }}
+      - name: Deploy frontend after backend succeeds
+        run: vercel deploy --prod --yes --token="$VERCEL_TOKEN" > "$RUNNER_TEMP/frontend-deploy-url.txt"
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_FRONTEND_PROJECT_ID }}
+      - name: Record deployment URLs
+        run: |
+          echo "Production deployment completed for commit $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Backend: $(cat "$RUNNER_TEMP/backend-deploy-url.txt")" >> "$GITHUB_STEP_SUMMARY"
+          echo "Frontend: $(cat "$RUNNER_TEMP/frontend-deploy-url.txt")" >> "$GITHUB_STEP_SUMMARY"
