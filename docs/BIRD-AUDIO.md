@@ -1,5 +1,8 @@
 # Identifikasi suara burung — prototipe simulasi
 
+> Pembaruan 26 November 2026: model burung sementara dan input WAV/MP3 telah diintegrasikan. Panduan terkini ada pada [INTEGRASI-MODEL-BURUNG.md](INTEGRASI-MODEL-BURUNG.md). Isi berikut mencatat tahap implementasi sebelumnya; keterangan simulasi dan versi worker lama adalah konteks historis.
+
+
 Implementasi: 13 November 2026. Model Syafiq belum tersedia. Seluruh label spesies dan nilai keyakinan adalah **contoh simulasi**, termasuk tabel dan XLSX. Modul ini menjalankan inferensi simulasi, bukan training model burung.
 
 ## Alur pengguna

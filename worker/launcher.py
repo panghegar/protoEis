@@ -8,6 +8,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog,messagebox,ttk
+from bird_model import import_model,installed_model,ready_model,setup_bird_commands
 from launcher_core import WorkerControl,config_worker_id,import_config,parse_start_uri,read_config,setup_commands,venv_python
 
 ROOT=Path(__file__).resolve().parent
@@ -20,7 +21,7 @@ class Launcher:
         self.installing=False
         self.closing=False
         window.title('EIS Worker — Laptop Lokal')
-        window.geometry('730x590')
+        window.geometry('800x690')
         window.minsize(650,520)
         window.configure(bg='#f5f7f2')
         ttk.Style().theme_use('clam')
@@ -39,6 +40,13 @@ class Launcher:
         self.connect.pack(side='left',padx=(0,8))
         self.start_button=ttk.Button(row,text='3. Jalankan worker',command=self.start)
         self.start_button.pack(side='left')
+        model_row=ttk.Frame(frame);model_row.pack(fill='x',pady=8)
+        self.import_bird=ttk.Button(model_row,text='Impor ZIP model burung',command=self.choose_model)
+        self.import_bird.pack(side='left',padx=(0,8))
+        self.prepare_bird=ttk.Button(model_row,text='Siapkan model burung (CPU)',command=self.install_bird)
+        self.prepare_bird.pack(side='left')
+        self.model_state=tk.StringVar()
+        ttk.Label(frame,textvariable=self.model_state,wraplength=720).pack(anchor='w',pady=4)
         self.stop_button=ttk.Button(frame,text='Hentikan worker',command=self.stop)
         self.stop_button.pack(anchor='w',pady=(0,12))
         self.bar=ttk.Progressbar(frame,mode='indeterminate');self.bar.pack(fill='x',pady=8)
@@ -99,6 +107,33 @@ class Launcher:
             except Exception as exc:self.events.put(('error',str(exc)))
         threading.Thread(target=run,daemon=True).start()
 
+    def choose_model(self):
+        if self.installing or self.control.running():return
+        source=filedialog.askopenfilename(title='Pilih paket model Sumatra dari Syafiq',filetypes=[('Paket model','*.zip')],parent=self.window)
+        if not source:return
+        try:
+            model=import_model(Path(source),ROOT)
+            self.write('Model sementara diimpor: '+model['name']+' | '+str(model['labelCount'])+' label. Klik Siapkan model burung sebelum menjalankan worker.')
+        except Exception as exc:
+            messagebox.showerror('Model belum diimpor',str(exc),parent=self.window)
+
+    def install_bird(self):
+        if self.installing or self.control.running():return
+        try:installed_model(ROOT,verify=True)
+        except (OSError,ValueError,KeyError):
+            messagebox.showinfo('Impor model dahulu','Pilih ZIP model Syafiq melalui tombol Impor ZIP model burung.',parent=self.window);return
+        if not messagebox.askyesno('Siapkan model burung','Pasang environment BirdNET/TensorFlow terpisah dan unduh model dasar BirdNET?\n\nPerlu internet serta beberapa GB ruang disk. Identifikasi versi ini menggunakan CPU. Kode Python dari ZIP tidak dijalankan.',parent=self.window):return
+        self.installing=True;self.bar.start();self.write('Menyiapkan model burung sementara…')
+        def run():
+            try:
+                for command in setup_bird_commands(ROOT):
+                    process=subprocess.Popen(command,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace',creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+                    for line in process.stdout:self.events.put(('log',line))
+                    if process.wait()!=0:raise RuntimeError('Persiapan model gagal. Periksa log, lalu coba kembali. Worker belum mengiklankan model sebagai siap.')
+                self.events.put(('done','Model burung sementara siap. Jalankan worker; website akan menampilkan kesiapan model.'))
+            except Exception as exc:self.events.put(('error',str(exc)))
+        threading.Thread(target=run,daemon=True).start()
+
     def protocol_start(self):
         try:
             config=read_config(ROOT/'worker.json')
@@ -138,7 +173,9 @@ class Launcher:
         elif self.control.process is not None and self.control.process.returncode not in (None,0):
             self.state.set('Worker berhenti dengan kesalahan. Periksa launcher-worker.log di folder worker.')
         else:self.state.set('Siap dijalankan.' if venv_python(ROOT).exists() else 'Dependensi belum terpasang. Mulai dari langkah 1.')
-        for button in (self.setup,self.connect):
+        model=ready_model(ROOT)
+        self.model_state.set('Model burung: '+model['name']+' · siap (CPU)' if model else 'Model burung belum siap. Impor ZIP → Siapkan model burung → Jalankan worker.')
+        for button in (self.setup,self.connect,self.import_bird,self.prepare_bird):
             button.configure(state='disabled' if self.installing or running else 'normal')
         self.start_button.configure(state='disabled' if self.installing or running else 'normal')
         self.stop_button.configure(state='normal' if running else 'disabled')

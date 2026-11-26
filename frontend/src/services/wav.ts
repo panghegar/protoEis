@@ -16,7 +16,7 @@ export async function inspectWav(file:File):Promise<WavInfo>{
    let encoding=v.getUint16(0,true);
    if(encoding===65534&&length>=40){if(v.getUint16(18,true)!==v.getUint16(14,true)||text(v,26,14)!=='\0\0\0\0\x10\0\x80\0\0\xaa\0\x38\x9b\x71')throw new Error('WAV extensible ini belum didukung.');encoding=v.getUint16(24,true);}
    const channels=v.getUint16(2,true),sampleRate=v.getUint32(4,true),bits=v.getUint16(14,true);align=v.getUint16(12,true);
-   if(encoding!==1||![1,2].includes(channels)||![8,16,24,32].includes(bits)||sampleRate<8000||sampleRate>192000||align!==channels*bits/8||v.getUint32(8,true)!==sampleRate*align)throw new Error('Demo mendukung WAV PCM 8/16/24/32-bit, mono/stereo, 8–192 kHz.');
+   if(encoding!==1||![1,2].includes(channels)||![8,16,24,32].includes(bits)||sampleRate<8000||sampleRate>192000||align!==channels*bits/8||v.getUint32(8,true)!==sampleRate*align)throw new Error('Prototipe mendukung WAV PCM 8/16/24/32-bit, mono/stereo, 8–192 kHz.');
    format={channels,sampleRate,bits:bits as WavInfo['bits']};
   }
   if(kind==='data'){dataBytes=length;if(format)break;}
@@ -24,7 +24,24 @@ export async function inspectWav(file:File):Promise<WavInfo>{
  }
  if(!format||!dataBytes||dataBytes%align)throw new Error('Header atau data WAV tidak lengkap.');
  const frames=dataBytes/align,duration=frames/format.sampleRate;
- if(!Number.isFinite(duration)||duration<=0||duration>7200)throw new Error('Durasi demo maksimal 2 jam.');
+ if(!Number.isFinite(duration)||duration<=0||duration>7200)throw new Error('Durasi rekaman maksimal 2 jam.');
  return {...format,frames,duration};
 }
 export async function hashPart(blob:Blob){const digest=await crypto.subtle.digest('SHA-256',await blob.arrayBuffer());return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');}
+
+export type AudioInfo={wav?:WavInfo;mp3?:{duration:number}};
+export async function inspectAudio(file:File):Promise<AudioInfo>{
+ if(/\.wav$/i.test(file.name))return {wav:await inspectWav(file)};
+ if(!/\.mp3$/i.test(file.name)||file.size<128)throw new Error('Pilih file WAV PCM atau MP3 yang valid.');
+ // Metadata only: do not decode the complete recording in browser RAM.
+ const duration=await new Promise<number>((resolve,reject)=>{
+  const audio=document.createElement('audio'),url=URL.createObjectURL(file);
+  const cleanup=()=>{clearTimeout(timer);audio.onloadedmetadata=null;audio.onerror=null;audio.removeAttribute('src');audio.load();URL.revokeObjectURL(url);};
+  const timer=setTimeout(()=>{cleanup();reject(new Error('Metadata MP3 belum dapat dibaca. Periksa file atau coba WAV.'));},15000);
+  audio.preload='metadata';audio.onloadedmetadata=()=>{const value=audio.duration;cleanup();resolve(value);};
+  audio.onerror=()=>{cleanup();reject(new Error('Browser tidak dapat membaca MP3 ini. Periksa file atau coba WAV.'));};
+  audio.src=url;
+ });
+ if(!Number.isFinite(duration)||duration<=0||duration>7200)throw new Error('Durasi rekaman maksimal 2 jam.');
+ return {mp3:{duration}};
+}

@@ -20,5 +20,9 @@ worker/worker.lock
 worker/worker.stop
 worker/worker.json.new
 
+worker/.bird-venv/
+worker/bird-models/
+worker/bird-model.json
+worker/bird-ready.json
 worker/bird-runs/
 worker/active-bird.json

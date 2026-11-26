@@ -17,8 +17,10 @@ export async function claim(workerId:string){
     const running=await tx.job.findFirst({where:{workerId,status:'running'}});
     if(running) return null;
     const device=await tx.worker.findUniqueOrThrow({where:{id:workerId}});
-    const bird=(device.capabilities as {bird_audio_version?:number}).bird_audio_version===1;
-    const rows=await tx.$queryRaw<Job[]>`SELECT * FROM "Job" WHERE "workerId"=${workerId} AND status='queued' AND (kind='training' OR (${bird} AND kind='bird' AND "audioExpiresAt">NOW())) ORDER BY "createdAt" ASC LIMIT 1 FOR UPDATE SKIP LOCKED`;
+    const caps=device.capabilities as {bird_audio_version?:number;bird_model?:{id:string}|null};
+    const bird=[1,2].includes(caps.bird_audio_version||0);
+    const modelId=caps.bird_audio_version===2?caps.bird_model?.id||'':'';
+    const rows=await tx.$queryRaw<Job[]>`SELECT * FROM "Job" WHERE "workerId"=${workerId} AND status='queued' AND (kind='training' OR (${bird} AND kind='bird' AND "audioExpiresAt">NOW() AND ((config->>'mode')='simulation' OR ((config->>'mode')='inference' AND (config->'model'->>'id')=${modelId} AND ${modelId}<>'')))) ORDER BY "createdAt" ASC LIMIT 1 FOR UPDATE SKIP LOCKED`;
     const queued=rows[0];
     if(!queued) return null;
     const lease=randomBytes(32).toString('hex');
